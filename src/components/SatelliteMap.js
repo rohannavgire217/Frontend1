@@ -1,0 +1,238 @@
+import { useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+const detections = [
+  {
+    id: "AL-2841",
+    name: "Narmada Refinery - Unit 04",
+    position: [22.47, 70.07],
+    tone: "#ff6653",
+  },
+  {
+    id: "AL-2840",
+    name: "Mundra Energy Terminal",
+    position: [22.74, 69.72],
+    tone: "#ffbb4a",
+  },
+  {
+    id: "AL-2839",
+    name: "Kutch district",
+    position: [23.25, 69.67],
+    tone: "#48d09e",
+  },
+  {
+    id: "TH-105",
+    name: "Persistent thermal source",
+    position: [22.31, 70.8],
+    tone: "#ffbb4a",
+  },
+  {
+    id: "TH-106",
+    name: "Persistent thermal source",
+    position: [23.02, 72.57],
+    tone: "#48d09e",
+  },
+];
+
+// National FIRMS-style view used when the map first opens. The focused alerts
+// above remain interactive; these points provide the India-wide thermal picture.
+const indiaThermalField = [
+  [34.1, 74.8, "#ffbb4a"], [33.6, 75.7, "#ff6653"], [32.7, 76.2, "#46c9f0"],
+  [31.4, 75.6, "#ffbb4a"], [30.8, 76.8, "#46c9f0"], [29.6, 77.3, "#ff6653"],
+  [28.8, 77.1, "#ffbb4a"], [28.4, 76.9, "#46c9f0"], [27.5, 75.9, "#ff6653"],
+  [26.9, 75.8, "#ffbb4a"], [26.3, 73.1, "#ff6653"], [25.5, 74.6, "#ffbb4a"],
+  [25.7, 82.1, "#46c9f0"], [25.3, 83.0, "#ffbb4a"], [24.7, 84.4, "#ff6653"],
+  [24.2, 86.1, "#46c9f0"], [23.7, 85.3, "#ffbb4a"], [23.2, 77.4, "#ff6653"],
+  [22.8, 75.8, "#ffbb4a"], [22.4, 73.2, "#46c9f0"], [21.4, 79.1, "#ff6653"],
+  [21.1, 78.4, "#ffbb4a"], [20.6, 78.9, "#ffbb4a"], [20.2, 73.0, "#46c9f0"],
+  [19.9, 75.3, "#ff6653"], [19.4, 76.8, "#ffbb4a"], [19.0, 73.1, "#ffbb4a"],
+  [18.5, 77.2, "#ff6653"], [18.0, 78.5, "#46c9f0"], [17.5, 80.7, "#ffbb4a"],
+  [16.8, 80.4, "#ff6653"], [16.2, 75.8, "#ffbb4a"], [15.7, 74.9, "#46c9f0"],
+  [15.2, 76.4, "#ff6653"], [14.6, 78.0, "#ffbb4a"], [14.1, 79.8, "#ff6653"],
+  [13.4, 78.6, "#ffbb4a"], [12.8, 77.8, "#46c9f0"], [12.2, 79.7, "#ff6653"],
+  [11.5, 76.9, "#ffbb4a"], [10.9, 78.3, "#ff6653"], [10.4, 76.9, "#ffbb4a"],
+  [9.8, 77.4, "#ff6653"], [8.9, 77.2, "#ffbb4a"], [7.5, 80.7, "#ff6653"],
+  [7.0, 81.6, "#ffbb4a"], [6.4, 80.1, "#ff6653"], [22.6, 88.3, "#ff6653"],
+  [23.1, 88.8, "#ffbb4a"], [24.0, 91.8, "#46c9f0"], [26.1, 91.7, "#ffbb4a"],
+  [27.0, 94.2, "#ff6653"], [25.8, 93.9, "#46c9f0"], [23.4, 92.2, "#ffbb4a"],
+];
+
+const thermalLocationNames = [
+  "Srinagar", "Kargil", "Manali", "Ludhiana", "Chandigarh", "Delhi NCR",
+  "Jaipur", "Alwar", "Jodhpur", "Ajmer", "Udaipur", "Kota", "Varanasi",
+  "Patna", "Gaya", "Dhanbad", "Ranchi", "Indore", "Bhopal", "Vadodara",
+  "Nagpur", "Wardha", "Chandrapur", "Surat", "Aurangabad", "Nanded", "Mumbai",
+  "Hyderabad", "Warangal", "Vijayawada", "Hubballi", "Goa", "Ballari", "Kurnool",
+  "Nellore", "Bengaluru", "Chennai", "Coimbatore", "Salem", "Madurai", "Tirunelveli",
+  "Kochi", "Thiruvananthapuram", "Colombo", "Kandy", "Galle", "Kolkata", "Durgapur",
+  "Shillong", "Guwahati", "Itanagar", "Kohima", "Aizawl", "Agartala",
+];
+
+function SatelliteMap({ selected, setSelected, scanning = true, showLayers = true, onScanAlert }) {
+  const mapNode = useRef(null);
+  const mapRef = useRef(null);
+  const initialView = useRef(true);
+  const [scanAlert, setScanAlert] = useState(null);
+
+  useEffect(() => {
+    if (!mapNode.current || mapRef.current) return undefined;
+    const map = L.map(mapNode.current, {
+      zoomControl: false,
+      attributionControl: true,
+      scrollWheelZoom: true,
+      wheelDebounceTime: 20,
+      wheelPxPerZoomLevel: 45,
+      zoomDelta: 0.5,
+      zoomSnap: 0.25,
+      zoomAnimation: true,
+      fadeAnimation: true,
+      inertia: true,
+      inertiaDeceleration: 2200,
+    }).setView([21.2, 79.2], 4.35);
+    L.control.zoom({ position: "bottomright" }).addTo(map);
+    L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 18, attribution: "Tiles © Esri" },
+    ).addTo(map);
+    // Geographic reference labels: countries, states, and cities across India.
+    L.tileLayer(
+      "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 18, pane: "overlayPane", zIndex: 320 },
+    ).addTo(map);
+    detections.forEach((detection) => {
+      const marker = L.marker(detection.position, {
+        icon: L.divIcon({
+          className: "thermal-marker-wrap",
+          html: `<span class="thermal-marker" style="--marker-color:${detection.tone}"><b></b><i></i></span>`,
+          iconSize: [42, 42],
+          iconAnchor: [21, 21],
+        }),
+      }).addTo(map);
+      marker.bindTooltip(
+        `<b>${detection.name}</b><small>${detection.id}</small>`,
+        {
+          permanent: false,
+          direction: "top",
+          className: "thermal-label",
+          offset: [0, -8],
+        },
+      );
+      marker.on("click", () =>
+        setSelected([
+          detection.id,
+          detection.id === "AL-2841" ? "Critical" : "Watch",
+          detection.name,
+          "Satellite detection",
+          "now",
+          detection.id === "AL-2841" ? "94" : "72",
+          detection.tone === "#ff6653"
+            ? "coral"
+            : detection.tone === "#ffbb4a"
+              ? "amber"
+              : "mint",
+        ]),
+      );
+    });
+    indiaThermalField.forEach(([lat, lng, tone], index) => {
+      L.marker([lat, lng], {
+        interactive: false,
+        icon: L.divIcon({
+          className: "thermal-marker-wrap thermal-field-wrap",
+          html: `<span class="thermal-marker thermal-field-marker" style="--marker-color:${tone}"><b></b><i></i></span>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+        }),
+      }).addTo(map).bindTooltip(thermalLocationNames[index] || `Thermal signal ${index + 1}`, {
+        permanent: false,
+        direction: "top",
+        className: "thermal-label thermal-field-label",
+        offset: [0, -8],
+      });
+    });
+    mapRef.current = map;
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [setSelected]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (initialView.current) {
+      initialView.current = false;
+      return;
+    }
+    const matched = detections.find(
+      (detection) => detection.id === selected[0],
+    );
+    if (matched)
+      mapRef.current.flyTo(matched.position, 9, {
+        duration: 0.45,
+        easeLinearity: 0.2,
+      });
+  }, [selected]);
+
+  useEffect(() => {
+    if (!scanning) return undefined;
+    const timer = window.setTimeout(() => {
+      const detected = detections[1];
+      const queuedAlert = [
+        "SC-2842",
+        "Watch",
+        "Scan change detected",
+        detected.name,
+        "72",
+        "amber",
+      ];
+      setScanAlert({
+        id: queuedAlert[0],
+        name: detected.name,
+        tone: detected.tone,
+      });
+      setSelected(queuedAlert);
+      onScanAlert?.(queuedAlert);
+    }, 4200);
+    return () => window.clearTimeout(timer);
+  }, [scanning, setSelected, onScanAlert]);
+
+  return (
+    <div className={"satellite-map-shell " + (scanning ? "is-scanning " : "") + (showLayers ? "" : "layers-hidden") }>
+      <div
+        ref={mapNode}
+        className="satellite-map"
+        aria-label="Live satellite map with thermal detections"
+      />
+      <div className="scan-overlay" aria-hidden="true">
+        <div className="scan-radar">
+          <div className="scan-radar-sweep" />
+          <div className="scan-radar-rings">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="scan-radar-target" />
+        </div>
+        <div className="scan-beam" />
+        <div className="scan-readout">VIIRS / SCANNING SECTOR 07</div>
+        {scanAlert && (
+          <div className="scan-alert" role="status">
+            <span style={{ background: scanAlert.tone }} />
+            <div>
+              <b>CHANGE DETECTED</b>
+              <small>{scanAlert.name}</small>
+            </div>
+            <button onClick={() => setScanAlert(null)} aria-label="Dismiss scan alert">×</button>
+          </div>
+        )}
+        <span className="scan-corner top-left" />
+        <span className="scan-corner top-right" />
+        <span className="scan-corner bottom-left" />
+        <span className="scan-corner bottom-right" />
+      </div>
+    </div>
+  );
+}
+
+export default SatelliteMap;
